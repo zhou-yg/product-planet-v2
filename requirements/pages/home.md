@@ -17,6 +17,7 @@ inject:
 - 中间
   - 文件内容模块，展示当前选中的文件内容
   - 使用 <md-editor>markdown编辑器</md-editor>
+  - 顶部不需要展示文件名
   - 提供保存按钮
     - 使用 <file-writer /> 里的写接口 保存最新的文件内容
 
