@@ -16,11 +16,11 @@ inject:
 
 - 中间
   - 文件内容模块，展示当前选中的文件内容
-  - 如果 markdown 文件且meta 声明 inject: ["依赖"]，
-    - 使用 <md-editor>markdown编辑器</md-editor>
+  - 使用 <md-editor>markdown编辑器</md-editor>
   - 提供保存按钮
     - 使用 <file-writer /> 里的写接口 保存最新的文件内容
 
 - 右侧
-  - 展示文件依赖列表， 仅显示名称和文件路径，可点击跳转
+  - 如果 markdown 文件且meta 声明 inject: ["依赖"]，
+    - 展示文件依赖列表， 仅显示名称和文件路径，可点击跳转
 
