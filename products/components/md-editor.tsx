@@ -81,18 +81,16 @@ export default function MdEditor({ title, markdown, fileKey }: Props) {
 
   return (
     <div className="md-editor-wrap">
-      <input
-        value={titleValue}
-        onChange={(e) => setTitleValue(e.target.value)}
-        placeholder="文档标题"
-        aria-label="文档标题"
-        className="mb-2 w-full rounded-md border border-zinc-200 px-3 py-2 text-lg font-semibold text-zinc-900 outline-none transition-colors focus:border-blue-400"
-      />
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <span className="font-mono text-xs text-zinc-400">
-          requirements/{fileKey}
-        </span>
-        <div className="flex items-center gap-3">
+      {/* Title input and save button on the same row */}
+      <div className="mb-2 flex items-center gap-3">
+        <input
+          value={titleValue}
+          onChange={(e) => setTitleValue(e.target.value)}
+          placeholder="文档标题"
+          aria-label="文档标题"
+          className="min-w-0 flex-1 rounded-md border border-zinc-200 px-3 py-2 text-lg font-semibold text-zinc-900 outline-none transition-colors focus:border-blue-400"
+        />
+        <div className="flex shrink-0 items-center gap-3">
           {message ? (
             <span
               className={`text-xs ${message.ok ? "text-emerald-600" : "text-red-600"}`}

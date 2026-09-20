@@ -18,23 +18,6 @@ export default function ContentPanel({ doc, missing }: Props) {
     <main className="min-w-0 flex-1 overflow-y-auto bg-zinc-50">
       {doc ? (
         <div className="mx-auto max-w-4xl px-4 py-4">
-          <div className="mb-6">
-            <p className="mb-2 font-mono text-xs text-zinc-400">
-              requirements/{doc.path}
-            </p>
-            <h2 className="text-2xl font-bold text-zinc-900">{doc.name}</h2>
-            {Object.keys(doc.meta).length > 0 ? (
-              <p className="mt-2 text-xs text-zinc-400">
-                meta:{" "}
-                {Object.entries(doc.meta)
-                  .map(([k, v]) => {
-                    if (Array.isArray(v)) return `${k}: [${v.length} 项]`;
-                    return `${k}: ${JSON.stringify(v)}`;
-                  })
-                  .join(" · ")}
-              </p>
-            ) : null}
-          </div>
           <div className="rounded-lg border border-zinc-200 bg-white p-2 shadow-sm">
             <MdEditor
               markdown={splitTitle(doc.content).body}
