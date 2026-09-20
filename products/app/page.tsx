@@ -32,7 +32,7 @@ export default async function Home({ searchParams }: PageProps) {
         <h1 className="text-sm font-semibold text-zinc-900">产品星球 2.0</h1>
         <span className="text-xs text-zinc-500">Markdown 管理平台</span>
       </header>
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 gap-[10px]">
         {/* 左：文件树 */}
         <FileTree
           tree={tree}

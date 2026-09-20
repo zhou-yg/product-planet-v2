@@ -1,5 +1,4 @@
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import MdEditor from "@/components/md-editor";
 import type { MarkdownDoc } from "@/lib/fs";
 
 interface Props {
@@ -7,11 +6,18 @@ interface Props {
   missing?: boolean;
 }
 
+/** Split content into (first H1 title, remaining body) */
+function splitTitle(content: string): { title: string; body: string } {
+  const m = content.match(/^#\s+(.+)\r?\n?/);
+  if (!m) return { title: "", body: content };
+  return { title: m[1].trim(), body: content.slice(m[0].length) };
+}
+
 export default function ContentPanel({ doc, missing }: Props) {
   return (
     <main className="min-w-0 flex-1 overflow-y-auto bg-zinc-50">
       {doc ? (
-        <div className="mx-auto max-w-3xl px-8 py-8">
+        <div className="mx-auto max-w-4xl px-4 py-4">
           <div className="mb-6">
             <p className="mb-2 font-mono text-xs text-zinc-400">
               requirements/{doc.path}
@@ -29,11 +35,13 @@ export default function ContentPanel({ doc, missing }: Props) {
               </p>
             ) : null}
           </div>
-          <article className="md-body text-zinc-800">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {doc.content}
-            </ReactMarkdown>
-          </article>
+          <div className="rounded-lg border border-zinc-200 bg-white p-2 shadow-sm">
+            <MdEditor
+              markdown={splitTitle(doc.content).body}
+              title={splitTitle(doc.content).title}
+              fileKey={doc.path}
+            />
+          </div>
         </div>
       ) : missing ? (
         <div className="mx-auto max-w-3xl px-8 py-8">

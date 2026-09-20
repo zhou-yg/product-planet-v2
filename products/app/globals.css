@@ -101,3 +101,57 @@
   border-top: 1px solid theme(--color-zinc-200);
   margin: 1.5em 0;
 }
+
+/* mdxeditor: tailwind preflight strips list styles, restore them inside the editor */
+.md-editor-wrap ul,
+[role="textbox"] ul,
+.mdxeditor ul {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+.md-editor-wrap ol,
+[role="textbox"] ol,
+.mdxeditor ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+}
+.md-editor-wrap li,
+[role="textbox"] li,
+.mdxeditor li {
+  margin: 0.25em 0;
+}
+.md-editor-wrap ul ul,
+.mdxeditor ul ul {
+  list-style: circle;
+}
+.md-editor-wrap ol ul,
+.mdxeditor ol ul {
+  list-style: disc;
+}
+.md-editor-wrap li > ul,
+.md-editor-wrap li > ol,
+.mdxeditor li > ul,
+.mdxeditor li > ol {
+  margin: 0.25em 0;
+}
+
+/* mdxeditor: keep visible spacing between paragraphs (blank lines in markdown) */
+.mdxeditor p,
+.mdxeditor ul,
+.mdxeditor ol,
+.mdxeditor blockquote,
+.mdxeditor pre,
+.mdxeditor h1,
+.mdxeditor h2,
+.mdxeditor h3,
+.mdxeditor h4,
+.mdxeditor hr {
+  margin: 0.75em 0;
+}
+.mdxeditor > * > :first-child,
+.mdxeditor :first-child {
+  margin-top: 0;
+}
+.mdxeditor :last-child {
+  margin-bottom: 0;
+}

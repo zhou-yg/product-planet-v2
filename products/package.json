@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@mdxeditor/editor": "^4.2.5",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.6.1",
     "@types/react": "^19.3.0",
