@@ -8,9 +8,11 @@ interface Props {
 
 /** Split content into (first H1 title, remaining body) */
 function splitTitle(content: string): { title: string; body: string } {
-  const m = content.match(/^#\s+(.+)\r?\n?/);
-  if (!m) return { title: "", body: content };
-  return { title: m[1].trim(), body: content.slice(m[0].length) };
+  // Trim leading whitespace (frontmatter stripping often leaves a leading newline)
+  const trimmed = content.replace(/^[^\S\r\n]*\r?\n+/, "");
+  const m = trimmed.match(/^#\s+(.+)\r?\n?/);
+  if (!m) return { title: "", body: trimmed };
+  return { title: m[1].trim(), body: trimmed.slice(m[0].length) };
 }
 
 export default function ContentPanel({ doc, missing }: Props) {
@@ -20,6 +22,7 @@ export default function ContentPanel({ doc, missing }: Props) {
         <div className="mx-auto max-w-4xl px-4 py-4">
           <div className="rounded-lg border border-zinc-200 bg-white p-2 shadow-sm">
             <MdEditor
+              key={doc.path}
               markdown={splitTitle(doc.content).body}
               title={splitTitle(doc.content).title}
               fileKey={doc.path}
