@@ -5,7 +5,7 @@
 
 返回
 - markdown 文本内容，组成如下 
-  - 文件内容 及其 inject 的内容
+  - 文件内容 (含 meta 信息) 及其 inject 的内容
   - 修改 diff， 只取涉及的文件的 diff
 
 内容的排列顺序
