@@ -10,6 +10,7 @@ import {
   thematicBreakPlugin,
   markdownShortcutPlugin,
   frontmatterPlugin,
+  jsxPlugin,
   toolbarPlugin,
   BoldItalicUnderlineToggles,
   UndoRedo,
@@ -46,8 +47,17 @@ export default function MdEditor({ title, markdown, fileKey }: Props) {
     setSaving(true);
     setMessage(null);
     try {
-      // Merge title (first H1) and body back into a single markdown document
-      const merged = `# ${titleValue.trim() || "未命名"}\n\n${contentRef.current.replace(/^\s+/, "")}`;
+      // Merge title (first H1) and body back into a single markdown document.
+      // Unescape HTML entities that were escaped for mdxeditor rendering.
+      const LT = "&" + "lt;";
+      const GT = "&" + "gt;";
+      const body = contentRef.current
+        .replace(/^\s+/, "")
+        .split(LT)
+        .join("<")
+        .split(GT)
+        .join(">");
+      const merged = `# ${titleValue.trim() || "未命名"}\n\n${body}`;
       const res = await fetch("/api/file/write", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

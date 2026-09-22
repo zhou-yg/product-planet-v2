@@ -41,8 +41,8 @@ export default async function Home({ searchParams }: PageProps) {
         />
         {/* 中：文件内容 */}
         <ContentPanel doc={doc} missing={!doc && !!target} />
-        {/* 右：依赖列表 */}
-        <DepsPanel deps={deps} hasDoc={!!doc} />
+        {/* 右：依赖列表 + 获取（view-and-diff） */}
+        <DepsPanel deps={deps} hasDoc={!!doc} docPath={doc?.path ?? ""} />
       </div>
     </div>
   );
