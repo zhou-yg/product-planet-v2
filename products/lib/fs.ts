@@ -1,7 +1,9 @@
 import "server-only";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import process from "node:process";
 import type { Dirent } from "node:fs";
 import matter from "gray-matter";
 import type {
@@ -54,7 +56,49 @@ function resolveDefaultWorkspaceRoot(): string {
   return path.resolve(process.cwd(), "..");
 }
 
-/** 列出所有候选 workspace（父目录下的子目录，标注是否含 requirements/） */
+/**
+ * 运行期注册的额外 workspace（文件夹选择器动态注册），name -> 绝对路径。
+ * 持久化到文件，确保 dev 模式下多 worker / 服务重启后仍可用。
+ */
+const REGISTRY_FILE = path.join(
+  os.tmpdir(),
+  "product-planet-workspace-registry.json",
+);
+
+function loadRegistry(): Map<string, string> {
+  const map = new Map<string, string>();
+  try {
+    const raw = fsSync.readFileSync(REGISTRY_FILE, "utf-8");
+    const data = JSON.parse(raw) as Record<string, string>;
+    for (const [name, abs] of Object.entries(data)) {
+      if (typeof abs === "string" && fsSync.existsSync(abs)) map.set(name, abs);
+    }
+  } catch {
+    // No registry yet or unreadable: start empty
+  }
+  return map;
+}
+
+function saveRegistry(map: Map<string, string>): void {
+  try {
+    fsSync.writeFileSync(
+      REGISTRY_FILE,
+      JSON.stringify(Object.fromEntries(map), null, 2),
+      "utf-8",
+    );
+  } catch {
+    // Best-effort persistence
+  }
+}
+
+const extraWorkspaces = loadRegistry();
+
+function rememberWorkspace(name: string, abs: string): void {
+  extraWorkspaces.set(name, abs);
+  saveRegistry(extraWorkspaces);
+}
+
+/** 列出所有候选 workspace（父目录下的子目录 + 动态注册项，标注是否含 requirements/） */
 export async function listWorkspaces(): Promise<WorkspaceInfo[]> {
   let entries: Dirent[];
   try {
@@ -74,15 +118,108 @@ export async function listWorkspaces(): Promise<WorkspaceInfo[]> {
     );
     list.push({ name: entry.name, hasRequirements });
   }
+  // Include dynamically registered workspaces picked via the folder selector
+  for (const [name, abs] of extraWorkspaces) {
+    if (list.some((ws) => ws.name === name)) continue;
+    list.push({ name, hasRequirements: workspaceHasRequirements(abs) });
+  }
   list.sort((a, b) => a.name.localeCompare(b.name));
   return list;
 }
 
-/** 校验 workspace 名称合法（父目录内的子目录名），返回根目录绝对路径或 null */
+/** Skip heavy / irrelevant directories during the bounded search */
+const SEARCH_SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  ".next",
+  ".turbo",
+  "Library",
+  "Applications",
+  "System",
+]);
+
+/** Bounded BFS: find a directory with the given name (containing requirements/) under root */
+function searchWorkspaceDir(
+  root: string,
+  name: string,
+  maxDepth: number,
+): string | null {
+  let level: string[] = [root];
+  for (let depth = 0; depth <= maxDepth && level.length > 0; depth++) {
+    const next: string[] = [];
+    for (const dir of level) {
+      let entries: Dirent[];
+      try {
+        entries = fsSync.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name.startsWith(".") || SEARCH_SKIP_DIRS.has(entry.name))
+          continue;
+        const abs = path.join(dir, entry.name);
+        if (entry.name === name && workspaceHasRequirements(abs)) return abs;
+        if (depth < maxDepth) next.push(abs);
+      }
+    }
+    level = next;
+  }
+  return null;
+}
+
+/**
+ * Register a workspace by folder name (from the client folder picker).
+ * Searches known roots for a directory with the same name that contains
+ * a requirements/ folder, then registers it for this server session.
+ */
+export function registerWorkspace(name: string): WorkspaceInfo | null {
+  if (
+    !name ||
+    name.includes("/") ||
+    name.includes("\\") ||
+    name.includes("\0") ||
+    name.startsWith(".")
+  ) {
+    return null;
+  }
+  // Already known (registry may have been written by another worker)
+  const cached = extraWorkspaces.get(name) ?? loadRegistry().get(name);
+  if (cached && workspaceHasRequirements(cached)) {
+    return { name, hasRequirements: true };
+  }
+  // Search roots: workspace parent dir first, then bounded searches below it
+  // and below the user's home / common project locations.
+  const direct = path.join(WORKSPACE_PARENT, name);
+  if (workspaceHasRequirements(direct)) {
+    rememberWorkspace(name, direct);
+    return { name, hasRequirements: true };
+  }
+  const searchRoots = [
+    WORKSPACE_PARENT,
+    process.cwd(),
+    path.join(os.homedir(), "Documents"),
+    path.join(os.homedir(), "Projects"),
+    os.homedir(),
+  ];
+  for (const root of searchRoots) {
+    const found = searchWorkspaceDir(root, name, 4);
+    if (found) {
+      rememberWorkspace(name, found);
+      return { name, hasRequirements: true };
+    }
+  }
+  return null;
+}
+
+/** 校验 workspace 名称合法（父目录内的子目录名或已注册项），返回根目录绝对路径或 null */
 export function resolveWorkspaceDir(name: string): string | null {
   if (!name || name.includes("/") || name.includes("\\") || name.includes("\0"))
     return null;
   if (name.startsWith(".")) return null;
+  // Reload registry lazily: another worker may have registered workspaces
+  const extra = extraWorkspaces.get(name) ?? loadRegistry().get(name);
+  if (extra) return extra;
   const abs = path.resolve(WORKSPACE_PARENT, name);
   const parentWithSep = WORKSPACE_PARENT.endsWith(path.sep)
     ? WORKSPACE_PARENT

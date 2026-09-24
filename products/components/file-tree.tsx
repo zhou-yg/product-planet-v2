@@ -116,20 +116,57 @@ export default function FileTree({
   // System-style folder picker (File System Access API).
   // The picked folder's name is matched against server-known workspaces.
   const [pickError, setPickError] = useState("");
+  const [registering, setRegistering] = useState(false);
+
+  // Pick a folder, then switch to it as the active workspace.
+  // If the folder is not a known workspace yet, ask the server to find and
+  // register it (by name, must contain a requirements/ folder), then switch.
+  const pickAndSwitchWs = useCallback(
+    async (folder: string) => {
+      setPickError("");
+      setRegistering(true);
+      try {
+        let matched = workspaces.find((ws) => ws.name === folder);
+        // Ask the server to search for & register this folder as a workspace
+        // when it is unknown, or when the known entry lacks requirements/
+        // (it may be a different folder with the same name).
+        if (!matched || !matched.hasRequirements) {
+          const res = await fetch("/api/workspace", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: folder }),
+          });
+          if (res.ok) {
+            matched = (await res.json()) as WorkspaceInfo;
+          }
+        }
+        if (!matched) {
+          setPickError(
+            `未找到名为「${folder}」的 workspace（需含 requirements 文件夹）`,
+          );
+          return;
+        }
+        if (!matched.hasRequirements) {
+          setPickError(`所选 workspace「${folder}」缺少 requirements 文件夹`);
+          // Still switch: the sidebar shows the "缺少 requirements 文件夹" hint
+        }
+        onSwitchWs(folder);
+      } catch (err) {
+        setPickError(`选择文件夹失败：${String(err)}`);
+      } finally {
+        setRegistering(false);
+      }
+    },
+    [onSwitchWs, workspaces],
+  );
+
   const pickFolder = useCallback(async () => {
     setPickError("");
     const w = window as WindowWithDirPicker;
     if (typeof w.showDirectoryPicker === "function") {
       try {
         const handle = await w.showDirectoryPicker({ mode: "read" });
-        const matched = workspaces.find((ws) => ws.name === handle.name);
-        if (!matched) {
-          setPickError(
-            `未找到名为「${handle.name}」的 workspace（需位于服务端 workspace 目录下且含 requirements 文件夹）`,
-          );
-          return;
-        }
-        onSwitchWs(handle.name);
+        await pickAndSwitchWs(handle.name);
       } catch (err) {
         if ((err as DOMException)?.name !== "AbortError") {
           setPickError(`选择文件夹失败：${String(err)}`);
@@ -149,17 +186,14 @@ export default function FileTree({
       const relPath: string = (files[0] as File & { webkitRelativePath?: string })
         .webkitRelativePath ?? "";
       const folder = relPath.split("/")[0] ?? "";
-      const matched = workspaces.find((ws) => ws.name === folder);
-      if (!matched) {
-        setPickError(
-          `未找到名为「${folder}」的 workspace（需位于服务端 workspace 目录下且含 requirements 文件夹）`,
-        );
+      if (!folder) {
+        setPickError("无法识别所选文件夹名称");
         return;
       }
-      onSwitchWs(folder);
+      void pickAndSwitchWs(folder);
     };
     input.click();
-  }, [onSwitchWs, workspaces]);
+  }, [pickAndSwitchWs]);
 
   const empty = useMemo(
     () => !tree || (tree.files.length === 0 && tree.dirs.length === 0),
@@ -190,7 +224,9 @@ export default function FileTree({
             <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z" />
           </svg>
           <span className="min-w-0 flex-1 truncate">{activeWs}</span>
-          <span className="shrink-0 text-xs text-zinc-400">选择…</span>
+          <span className="shrink-0 text-xs text-zinc-400">
+            {registering ? "识别中…" : "选择…"}
+          </span>
         </button>
         {pickError ? (
           <p className="mt-1 rounded-md bg-red-50 px-2 py-1 text-xs text-red-600">
