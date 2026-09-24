@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   DEFAULT_WORKSPACE,
   readDoc,
+  readFileContent,
   resolveWorkspaceDir,
   workspaceHasRequirements,
 } from "@/lib/fs";
@@ -61,12 +62,6 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Involved files: the selected file + its inject dependencies
-  const injects = Array.isArray(doc.meta.inject)
-    ? doc.meta.inject.filter((v): v is string => typeof v === "string")
-    : [];
-  const involved = [doc.path, ...injects];
-
   /** Read the raw file (frontmatter included) relative to workspace requirements/ */
   const requirementsRoot = path.join(wsDir, "requirements");
   async function rawContent(relPath: string): Promise<string | null> {
@@ -77,12 +72,37 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  /** Collect inject deps (text md files only) from parsed frontmatter */
+  function injectsOf(meta: Record<string, unknown>): string[] {
+    return Array.isArray(meta.inject)
+      ? meta.inject.filter((v): v is string => typeof v === "string")
+      : [];
+  }
+
+  // Recursively collect inject dependencies in BFS order with dedup
+  // (each dependency's own injects are also expanded, cycles are skipped)
+  const injects: string[] = [];
+  const seen = new Set<string>([doc.path]);
+  const queue = injectsOf(doc.meta);
+  while (queue.length > 0) {
+    const dep = queue.shift()!;
+    if (seen.has(dep)) continue; // skip duplicates and cycles
+    seen.add(dep);
+    injects.push(dep);
+    // Only md deps may carry further injects
+    const depDoc = await readFileContent(wsDir, dep);
+    if (depDoc?.kind === "md") queue.push(...injectsOf(depDoc.meta));
+  }
+
+  const involved = [doc.path, ...injects];
+
   const parts: string[] = [];
 
   // 1. Selected file content (with meta/frontmatter)
   parts.push((await rawContent(doc.path)) ?? doc.content);
 
-  // 2. Inject contents (with meta) wrapped in <inject content="path">
+  // 2. Inject contents (with meta) wrapped in <inject content="path">,
+  //    recursively including nested injects
   for (const dep of injects) {
     const raw = await rawContent(dep);
     if (raw === null) continue;
