@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { InjectDep } from "@/lib/shared";
-import { FILE_PARAM } from "@/lib/shared";
+import { FILE_PARAM, WS_PARAM } from "@/lib/shared";
 
 interface Props {
   deps: InjectDep[];
@@ -14,13 +14,18 @@ interface Props {
 
 export default function DepsPanel({ deps, hasDoc, docPath }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const ws = searchParams.get(WS_PARAM) ?? "";
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [content, setContent] = useState("");
 
   const jump = (depPath: string) => {
-    router.push(`/?${FILE_PARAM}=${encodeURIComponent(depPath)}`, {
+    const params = new URLSearchParams();
+    if (ws) params.set(WS_PARAM, ws);
+    params.set(FILE_PARAM, depPath);
+    router.push(`/?${params.toString()}`, {
       scroll: false,
     });
   };
@@ -32,7 +37,9 @@ export default function DepsPanel({ deps, hasDoc, docPath }: Props) {
     setContent("");
     try {
       const res = await fetch(
-        `/api/view-diff?path=${encodeURIComponent(docPath)}`,
+        `/api/view-diff?path=${encodeURIComponent(docPath)}${
+          ws ? `&${WS_PARAM}=${encodeURIComponent(ws)}` : ""
+        }`,
       );
       const data = (await res.json()) as {
         ok: boolean;
@@ -50,7 +57,7 @@ export default function DepsPanel({ deps, hasDoc, docPath }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [docPath]);
+  }, [docPath, ws]);
 
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-zinc-200 bg-white">

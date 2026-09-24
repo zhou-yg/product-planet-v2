@@ -3,19 +3,30 @@ import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
-import { CONTENT_ROOT, readDoc } from "@/lib/fs";
+import {
+  DEFAULT_WORKSPACE,
+  readDoc,
+  resolveWorkspaceDir,
+  workspaceHasRequirements,
+} from "@/lib/fs";
+import { WS_PARAM } from "@/lib/shared";
+
+/** Resolve workspace with fallback to the default when the param is absent */
+function wsDirOr403(wsName: string): string | null {
+  return resolveWorkspaceDir(wsName) ?? resolveWorkspaceDir(DEFAULT_WORKSPACE);
+}
 
 export const dynamic = "force-dynamic";
 
 const exec = promisify(execFile);
 
 /** Get uncommitted git diff (vs HEAD) for a file, empty string when none */
-async function fileDiff(relPath: string): Promise<string> {
+async function fileDiff(wsDir: string, relPath: string): Promise<string> {
   try {
     const { stdout } = await exec(
       "git",
       ["diff", "HEAD", "--", `requirements/${relPath}`],
-      { cwd: CONTENT_ROOT },
+      { cwd: wsDir },
     );
     return stdout.trim();
   } catch {
@@ -26,14 +37,23 @@ async function fileDiff(relPath: string): Promise<string> {
 
 /**
  * View-and-diff endpoint.
- * GET /api/view-diff?path=pages/home.md
+ * GET /api/view-diff?path=pages/home.md&ws=product-planet-v2
  * Returns assembled markdown: file content, inject contents
  * (wrapped in <inject content="...">) and per-file diffs
  * (wrapped in <diff content="...">).
  */
 export async function GET(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("path") ?? "";
-  const doc = await readDoc(raw);
+  const wsName = req.nextUrl.searchParams.get(WS_PARAM) ?? "";
+  const wsDir = wsDirOr403(wsName);
+  if (!wsDir || !workspaceHasRequirements(wsDir)) {
+    return NextResponse.json(
+      { ok: false, message: "workspace 不存在或缺少 requirements 文件夹" },
+      { status: 400 },
+    );
+  }
+
+  const doc = await readDoc(wsDir, raw);
   if (!doc) {
     return NextResponse.json(
       { ok: false, message: "文件不存在或路径非法" },
@@ -47,10 +67,11 @@ export async function GET(req: NextRequest) {
     : [];
   const involved = [doc.path, ...injects];
 
-  /** Read the raw file (frontmatter included) relative to CONTENT_ROOT */
+  /** Read the raw file (frontmatter included) relative to workspace requirements/ */
+  const requirementsRoot = path.join(wsDir, "requirements");
   async function rawContent(relPath: string): Promise<string | null> {
     try {
-      return await readFile(path.join(CONTENT_ROOT, relPath), "utf-8");
+      return await readFile(path.join(requirementsRoot, relPath), "utf-8");
     } catch {
       return null;
     }
@@ -70,7 +91,7 @@ export async function GET(req: NextRequest) {
 
   // 3. Per-file diffs wrapped in <diff content="path">
   for (const file of involved) {
-    const diff = await fileDiff(file);
+    const diff = await fileDiff(wsDir, file);
     if (!diff) continue;
     parts.push(`<diff content="${file}">\n${diff}\n</diff>`);
   }

@@ -1,9 +1,12 @@
 import MdEditor from "@/components/md-editor";
-import type { MarkdownDoc } from "@/lib/fs";
+import GlbViewer from "@/components/glb-viewer";
+import type { FileContent } from "@/lib/fs";
 
 interface Props {
-  doc: MarkdownDoc | null;
+  doc: FileContent | null;
   missing?: boolean;
+  /** Active workspace name (for raw file URLs) */
+  ws: string;
 }
 
 /**
@@ -27,19 +30,47 @@ function splitTitle(content: string): { title: string; body: string } {
   return { title: rawTitle, body };
 }
 
-export default function ContentPanel({ doc, missing }: Props) {
+/** Raw file URL for image/glb previews */
+function rawUrl(path: string, ws: string): string {
+  return `/api/file/raw?path=${encodeURIComponent(path)}${
+    ws ? `&ws=${encodeURIComponent(ws)}` : ""
+  }`;
+}
+
+export default function ContentPanel({ doc, missing, ws }: Props) {
   return (
-    <main className="min-w-0 flex-1 overflow-y-auto bg-zinc-50">
-      {doc ? (
-        <div className="mx-auto max-w-4xl px-4 py-4">
-          <div className="rounded-lg border border-zinc-200 bg-white p-2 shadow-sm">
-            <MdEditor
-              key={doc.path}
-              markdown={splitTitle(doc.content).body}
-              title={splitTitle(doc.content).title}
-              fileKey={doc.path}
-            />
+    <main className="min-w-0 flex-1 overflow-hidden bg-zinc-50">
+      {doc?.kind === "md" ? (
+        <div className="h-full overflow-y-auto">
+          <div className="mx-auto max-w-4xl px-4 py-4">
+            <div className="rounded-lg border border-zinc-200 bg-white p-2 shadow-sm">
+              <MdEditor
+                key={doc.path}
+                markdown={splitTitle(doc.content).body}
+                title={splitTitle(doc.content).title}
+                fileKey={doc.path}
+              />
+            </div>
           </div>
+        </div>
+      ) : doc?.kind === "image" ? (
+        // Image: read-only preview
+        <div className="flex h-full items-center justify-center p-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={rawUrl(doc.path, ws)}
+            alt={doc.name}
+            className="max-h-full max-w-full rounded-lg border border-zinc-200 bg-white object-contain shadow-sm"
+          />
+        </div>
+      ) : doc?.kind === "glb" ? (
+        // glb/gltf: read-only three.js viewer (rotate / zoom / pan)
+        <GlbViewer src={rawUrl(doc.path, ws)} fileKey={doc.path} />
+      ) : doc ? (
+        <div className="flex h-full items-center justify-center">
+          <p className="rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-500 shadow-sm">
+            暂不支持预览该文件类型
+          </p>
         </div>
       ) : missing ? (
         <div className="mx-auto max-w-3xl px-8 py-8">

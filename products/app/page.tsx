@@ -3,11 +3,15 @@ import ContentPanel from "@/components/content-panel";
 import DepsPanel from "@/components/deps-panel";
 import {
   buildTree,
-  readDoc,
+  readFileContent,
   defaultFile,
   resolveInject,
+  resolveWorkspaceDir,
+  workspaceHasRequirements,
+  listWorkspaces,
+  DEFAULT_WORKSPACE,
 } from "@/lib/fs";
-import { FILE_PARAM } from "@/lib/shared";
+import { FILE_PARAM, WS_PARAM } from "@/lib/shared";
 
 export const dynamic = "force-dynamic";
 
@@ -15,16 +19,36 @@ interface PageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
+function firstParam(
+  params: Record<string, string | string[] | undefined>,
+  key: string,
+): string {
+  const raw = params[key];
+  return (Array.isArray(raw) ? raw[0] : raw) ?? "";
+}
+
 export default async function Home({ searchParams }: PageProps) {
   const params = await searchParams;
-  const raw = params[FILE_PARAM];
-  const selected = (Array.isArray(raw) ? raw[0] : raw) ?? "";
+  const wsName = firstParam(params, WS_PARAM);
+  const selected = firstParam(params, FILE_PARAM);
 
-  const tree = await buildTree();
-  const fallback = selected ? null : await defaultFile();
+  // Resolve workspace: fall back to the default when missing/invalid
+  const wsDir = resolveWorkspaceDir(wsName) ?? resolveWorkspaceDir(DEFAULT_WORKSPACE);
+  const activeWs = wsDir ? wsDir.split("/").pop()! : DEFAULT_WORKSPACE;
+
+  const workspaces = await listWorkspaces();
+  const hasRequirements = wsDir ? workspaceHasRequirements(wsDir) : false;
+
+  // Tree / doc / deps are only available when requirements/ exists
+  const tree = hasRequirements && wsDir ? await buildTree(wsDir) : null;
+  const fallback =
+    hasRequirements && wsDir && !selected ? await defaultFile(wsDir) : "";
   const target = selected || fallback || "";
-  const doc = target ? await readDoc(target) : null;
-  const deps = doc ? await resolveInject(doc.meta) : [];
+  const doc =
+    hasRequirements && wsDir && target
+      ? await readFileContent(wsDir, target)
+      : null;
+  const deps = wsDir && doc ? await resolveInject(wsDir, doc.meta) : [];
 
   return (
     <div className="flex h-screen flex-col">
@@ -33,14 +57,17 @@ export default async function Home({ searchParams }: PageProps) {
         <span className="text-xs text-zinc-500">Markdown 管理平台</span>
       </header>
       <div className="flex min-h-0 flex-1 gap-[10px]">
-        {/* 左：文件树 */}
+        {/* 左：workspace 选择器 + 文件树 */}
         <FileTree
           tree={tree}
           selected={doc ? doc.path : ""}
           fallbackHint={!doc && target ? target : ""}
+          workspaces={workspaces}
+          activeWs={activeWs}
+          missingRequirements={!hasRequirements}
         />
-        {/* 中：文件内容 */}
-        <ContentPanel doc={doc} missing={!doc && !!target} />
+        {/* 中：文件内容（按类型分发：md 编辑器 / 图片预览 / glb 预览器） */}
+        <ContentPanel doc={doc} missing={!doc && !!target} ws={activeWs} />
         {/* 右：依赖列表 + 获取（view-and-diff） */}
         <DepsPanel deps={deps} hasDoc={!!doc} docPath={doc?.path ?? ""} />
       </div>

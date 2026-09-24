@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   MDXEditor,
   headingsPlugin,
@@ -35,6 +35,8 @@ interface Props {
  */
 export default function MdEditor({ title, markdown, fileKey }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const ws = searchParams.get("ws") ?? "";
   const contentRef = useRef(markdown);
   const [titleValue, setTitleValue] = useState(title);
   const [saving, setSaving] = useState(false);
@@ -61,7 +63,7 @@ export default function MdEditor({ title, markdown, fileKey }: Props) {
       const res = await fetch("/api/file/write", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: fileKey, content: merged }),
+        body: JSON.stringify({ path: fileKey, content: merged, ws }),
       });
       const data = (await res.json()) as { ok: boolean; message?: string };
       if (!res.ok || !data.ok) {
@@ -75,7 +77,7 @@ export default function MdEditor({ title, markdown, fileKey }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [fileKey, router, saving, titleValue]);
+  }, [fileKey, router, saving, titleValue, ws]);
 
   // Cmd/Ctrl + S triggers save
   useEffect(() => {

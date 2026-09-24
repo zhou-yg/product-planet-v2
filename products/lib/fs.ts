@@ -5,54 +5,115 @@ import path from "node:path";
 import type { Dirent } from "node:fs";
 import matter from "gray-matter";
 import type {
+  FileContent,
   FileNode,
   InjectDep,
-  MarkdownDoc,
   TreeNode,
+  WorkspaceInfo,
 } from "@/lib/shared";
-import { flattenFiles } from "@/lib/shared";
+import { fileKind, flattenFiles } from "@/lib/shared";
 
-export { FILE_PARAM, flattenFiles } from "@/lib/shared";
+export { FILE_PARAM, WS_PARAM, flattenFiles } from "@/lib/shared";
 export type {
+  FileContent,
   FileNode,
   InjectDep,
   MarkdownDoc,
   TreeNode,
+  WorkspaceInfo,
 } from "@/lib/shared";
 
 /**
- * 根目录：markdown 内容库（文件树展示、内容浏览的范围）。
- * 应用代码在 products/ 下运行，requirements/ 位于仓库根目录（上一级），
- * 因此优先用环境变量 REQUIREMENTS_ROOT 指定；否则从 cwd 逐级向上查找
- * （支持 products/ 内运行与仓库根目录运行两种情况）。
+ * Workspace 根目录：requirements/ 所在的目录（如仓库根目录）。
+ * 同级目录视为其它 workspace，workspace 选择器从中列出。
+ * 优先用环境变量 REQUIREMENTS_ROOT 指定默认 workspace 根目录；
+ * 否则从 cwd 逐级向上查找 requirements/（支持 products/ 内运行与仓库根目录运行）。
  */
-export const CONTENT_ROOT = resolveContentRoot();
+const DEFAULT_WORKSPACE_ROOT = resolveDefaultWorkspaceRoot();
 
-function resolveContentRoot(): string {
-  if (process.env.REQUIREMENTS_ROOT) {
-    return path.resolve(process.env.REQUIREMENTS_ROOT);
+/** 默认 workspace 根目录（含 requirements/ 的目录） */
+export const DEFAULT_WORKSPACE = path.basename(DEFAULT_WORKSPACE_ROOT);
+
+/** workspace 的父目录，其下的每个子目录都是一个候选 workspace */
+export const WORKSPACE_PARENT = path.dirname(DEFAULT_WORKSPACE_ROOT);
+
+function resolveDefaultWorkspaceRoot(): string {
+  const envRoot = process.env.REQUIREMENTS_ROOT;
+  if (envRoot) {
+    // REQUIREMENTS_ROOT points to the requirements/ folder itself
+    return path.resolve(envRoot, "..");
   }
   let dir = process.cwd();
   for (;;) {
-    const candidate = path.join(dir, "requirements");
-    if (fsSync.existsSync(candidate)) return candidate;
+    if (fsSync.existsSync(path.join(dir, "requirements"))) return dir;
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
-  // 兜底：假定从 products/ 内运行，requirements/ 在上一级
-  return path.join(process.cwd(), "..", "requirements");
+  // Fallback: assume running inside products/, requirements/ one level up
+  return path.resolve(process.cwd(), "..");
+}
+
+/** 列出所有候选 workspace（父目录下的子目录，标注是否含 requirements/） */
+export async function listWorkspaces(): Promise<WorkspaceInfo[]> {
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(WORKSPACE_PARENT, { withFileTypes: true });
+  } catch {
+    return [{ name: DEFAULT_WORKSPACE, hasRequirements: true }];
+  }
+  const list: WorkspaceInfo[] = [
+    { name: DEFAULT_WORKSPACE, hasRequirements: true },
+  ];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith(".")) continue;
+    if (entry.name === DEFAULT_WORKSPACE) continue;
+    const hasRequirements = fsSync.existsSync(
+      path.join(WORKSPACE_PARENT, entry.name, "requirements"),
+    );
+    list.push({ name: entry.name, hasRequirements });
+  }
+  list.sort((a, b) => a.name.localeCompare(b.name));
+  return list;
+}
+
+/** 校验 workspace 名称合法（父目录内的子目录名），返回根目录绝对路径或 null */
+export function resolveWorkspaceDir(name: string): string | null {
+  if (!name || name.includes("/") || name.includes("\\") || name.includes("\0"))
+    return null;
+  if (name.startsWith(".")) return null;
+  const abs = path.resolve(WORKSPACE_PARENT, name);
+  const parentWithSep = WORKSPACE_PARENT.endsWith(path.sep)
+    ? WORKSPACE_PARENT
+    : WORKSPACE_PARENT + path.sep;
+  if (abs !== WORKSPACE_PARENT && !abs.startsWith(parentWithSep)) return null;
+  return abs;
+}
+
+/** workspace 是否含 requirements 目录 */
+export function workspaceHasRequirements(wsDir: string): boolean {
+  return fsSync.existsSync(path.join(wsDir, "requirements"));
 }
 
 const IGNORED_DIRS = new Set(["node_modules", ".git", ".next", ".turbo"]);
 
-/** 递归构建 markdown 文件树 */
-export async function buildTree(): Promise<TreeNode> {
-  return buildDir("", "requirements");
+/** 文件树收录的扩展名（md 文档 + 可预览的资源类型） */
+const TREE_EXTS = /\.(md|markdown|png|jpe?g|gif|webp|svg|avif|bmp|ico|glb|gltf)$/i;
+
+/** 递归构建某个 workspace requirements/ 下的文件树 */
+export async function buildTree(wsDir: string): Promise<TreeNode> {
+  return buildDir(wsDir, "", "requirements");
 }
 
-async function buildDir(relDir: string, displayName: string): Promise<TreeNode> {
-  const absDir = relDir ? path.join(CONTENT_ROOT, relDir) : CONTENT_ROOT;
+async function buildDir(
+  wsDir: string,
+  relDir: string,
+  displayName: string,
+): Promise<TreeNode> {
+  const absDir = relDir
+    ? path.join(wsDir, "requirements", relDir)
+    : path.join(wsDir, "requirements");
   let entries: Dirent[];
   try {
     entries = await fs.readdir(absDir, { withFileTypes: true });
@@ -69,18 +130,20 @@ async function buildDir(relDir: string, displayName: string): Promise<TreeNode> 
     if (entry.isDirectory()) {
       dirs.push(
         await buildDir(
+          wsDir,
           relDir ? path.posix.join(relDir, entry.name) : entry.name,
           entry.name,
         ),
       );
     } else if (
       entry.isFile() &&
-      entry.name.toLowerCase().endsWith(".md") &&
+      TREE_EXTS.test(entry.name) &&
       entry.name.toLowerCase() !== "readme.md"
     ) {
       files.push({
         path: relDir ? `${relDir}/${entry.name}` : entry.name,
         name: entry.name,
+        kind: fileKind(entry.name),
       });
     }
   }
@@ -91,22 +154,32 @@ async function buildDir(relDir: string, displayName: string): Promise<TreeNode> 
   return { dirPath: relDir, name: displayName, dirs, files };
 }
 
-/** 校验路径合法（在 CONTENT_ROOT 内、是 .md 文件），返回绝对路径或 null */
-function resolveSafe(relPath: string): string | null {
+/** 校验路径合法（在 workspace requirements/ 内、是受支持的文件类型），返回绝对路径或 null */
+function resolveSafe(wsDir: string, relPath: string): string | null {
   if (!relPath || relPath.includes("\0")) return null;
-  if (!relPath.toLowerCase().endsWith(".md")) return null;
-  const abs = path.resolve(CONTENT_ROOT, relPath);
-  const rootWithSep = CONTENT_ROOT.endsWith(path.sep)
-    ? CONTENT_ROOT
-    : CONTENT_ROOT + path.sep;
-  if (abs !== CONTENT_ROOT && !abs.startsWith(rootWithSep)) return null;
+  if (!TREE_EXTS.test(relPath)) return null;
+  const abs = path.resolve(path.join(wsDir, "requirements"), relPath);
+  const root = path.join(wsDir, "requirements");
+  const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
+  if (abs !== root && !abs.startsWith(rootWithSep)) return null;
   return abs;
 }
 
-/** 读取文件并解析 frontmatter；路径非法或不存在时返回 null */
-export async function readDoc(relPath: string): Promise<MarkdownDoc | null> {
-  const abs = resolveSafe(relPath);
+/**
+ * 读取文件信息：md 文件解析 frontmatter 与正文；
+ * image/glb 文件只返回元信息（二进制内容由 /api/file/raw 加载）。
+ */
+export async function readFileContent(
+  wsDir: string,
+  relPath: string,
+): Promise<FileContent | null> {
+  const abs = resolveSafe(wsDir, relPath);
   if (!abs) return null;
+  const kind = fileKind(relPath);
+  const name = path.basename(relPath, path.extname(relPath));
+  if (kind !== "md") {
+    return { path: relPath, name, kind, meta: {}, content: "" };
+  }
   let raw: string;
   try {
     raw = await fs.readFile(abs, "utf-8");
@@ -115,12 +188,16 @@ export async function readDoc(relPath: string): Promise<MarkdownDoc | null> {
   }
   const parsed = matter(raw);
   const meta = (parsed.data ?? {}) as Record<string, unknown>;
-  return {
-    path: relPath,
-    name: path.basename(relPath, path.extname(relPath)),
-    meta,
-    content: parsed.content,
-  };
+  return { path: relPath, name, kind, meta, content: parsed.content };
+}
+
+/** 向后兼容：读取 markdown 文档（等价于 readFileContent，非 md 返回 null） */
+export async function readDoc(
+  wsDir: string,
+  relPath: string,
+): Promise<FileContent | null> {
+  const doc = await readFileContent(wsDir, relPath);
+  return doc && doc.kind === "md" ? doc : null;
 }
 
 /**
@@ -129,6 +206,7 @@ export async function readDoc(relPath: string): Promise<MarkdownDoc | null> {
  * 路径不存在时 exists 为 false（展示但仍可看到路径）。
  */
 export async function resolveInject(
+  wsDir: string,
   meta: Record<string, unknown>,
 ): Promise<InjectDep[]> {
   const value = meta.inject;
@@ -138,26 +216,63 @@ export async function resolveInject(
     if (typeof item !== "string") continue;
     const p = item.trim();
     if (!p) continue;
-    const abs = resolveSafe(p);
-    if (!abs) continue; // 非法路径（越界 / 非 .md）直接忽略
+    const abs = resolveSafe(wsDir, p);
+    if (!abs) continue; // 非法路径（越界 / 不支持的类型）直接忽略
     let name = path.basename(p, path.extname(p));
     let exists = false;
     try {
       const raw = await fs.readFile(abs, "utf-8");
       exists = true;
-      const parsed = matter(raw);
-      const metaObj = (parsed.data ?? {}) as Record<string, unknown>;
-      const title =
-        typeof metaObj.title === "string" && metaObj.title.trim()
-          ? metaObj.title.trim()
-          : firstH1(parsed.content);
-      if (title) name = title;
+      if (fileKind(p) === "md") {
+        const parsed = matter(raw);
+        const metaObj = (parsed.data ?? {}) as Record<string, unknown>;
+        const title =
+          typeof metaObj.title === "string" && metaObj.title.trim()
+            ? metaObj.title.trim()
+            : firstH1(parsed.content);
+        if (title) name = title;
+      }
     } catch {
       // 文件不存在：保留文件名作为名称
     }
     deps.push({ name, path: p, exists });
   }
   return deps;
+}
+
+/** 读取原始二进制文件（image/glb 预览用），返回 Buffer 或 null */
+export async function readRaw(
+  wsDir: string,
+  relPath: string,
+): Promise<Buffer | null> {
+  const abs = resolveSafe(wsDir, relPath);
+  if (!abs) return null;
+  try {
+    return await fs.readFile(abs);
+  } catch {
+    return null;
+  }
+}
+
+/** 文件的 MIME 类型（raw 接口返回用） */
+export function mimeOf(relPath: string): string {
+  const kind = fileKind(relPath);
+  if (kind === "md") return "text/markdown; charset=utf-8";
+  const ext = relPath.toLowerCase().split(".").pop() ?? "";
+  const map: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    svg: "image/svg+xml",
+    avif: "image/avif",
+    bmp: "image/bmp",
+    ico: "image/x-icon",
+    glb: "model/gltf-binary",
+    gltf: "model/gltf+json",
+  };
+  return map[ext] ?? "application/octet-stream";
 }
 
 /** 取正文第一个一级标题文本 */
@@ -167,10 +282,10 @@ function firstH1(content: string): string | null {
 }
 
 /** 默认打开的文件：优先 requirements/pages/home.md */
-export async function defaultFile(): Promise<string> {
+export async function defaultFile(wsDir: string): Promise<string> {
   const candidates = ["pages/home.md", "common/base.md"];
   for (const candidate of candidates) {
-    const abs = resolveSafe(candidate);
+    const abs = resolveSafe(wsDir, candidate);
     if (!abs) continue;
     try {
       await fs.access(abs);
@@ -179,7 +294,7 @@ export async function defaultFile(): Promise<string> {
       // continue
     }
   }
-  const tree = await buildTree();
-  const first = flattenFiles(tree)[0];
+  const tree = await buildTree(wsDir);
+  const first = flattenFiles(tree).find((f) => f.kind === "md");
   return first?.path ?? "";
 }
