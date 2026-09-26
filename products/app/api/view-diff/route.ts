@@ -98,8 +98,10 @@ export async function GET(req: NextRequest) {
 
   const parts: string[] = [];
 
-  // 1. Selected file content (with meta/frontmatter)
-  parts.push((await rawContent(doc.path)) ?? doc.content);
+  // 1. Selected file path (relative to requirements/) and content (with meta/frontmatter)
+  parts.push(
+    `# ${doc.path}\n\n${(await rawContent(doc.path)) ?? doc.content}`,
+  );
 
   // 2. Inject contents (with meta) wrapped in <inject content="path">,
   //    recursively including nested injects

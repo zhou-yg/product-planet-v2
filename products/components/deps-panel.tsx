@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { InjectDep } from "@/lib/shared";
 import { FILE_PARAM, WS_PARAM } from "@/lib/shared";
+import ViewPrompts from "@/components/view-prompts";
 
 interface Props {
   deps: InjectDep[];
@@ -90,37 +91,14 @@ export default function DepsPanel({ deps, hasDoc, docPath }: Props) {
         </p>
       ) : null}
 
-      {/* View-and-diff dialog */}
-      {open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6"
-          role="dialog"
-          aria-modal="true"
-          aria-label="内容与差异"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            className="flex max-h-[80vh] w-full max-w-3xl flex-col rounded-lg bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex shrink-0 items-center justify-between border-b border-zinc-100 px-4 py-3">
-              <span className="text-sm font-semibold text-zinc-900">
-                内容与差异（{docPath}）
-              </span>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100"
-              >
-                关闭
-              </button>
-            </div>
-            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words px-4 py-3 font-mono text-xs leading-relaxed text-zinc-700">
-              {content}
-            </pre>
-          </div>
-        </div>
-      ) : null}
+      {/* View-prompts dialog: 展示 view-and-diff 接口返回的内容，支持复制 */}
+      <ViewPrompts
+        open={open}
+        onClose={() => setOpen(false)}
+        docPath={docPath}
+        content={content}
+      />
+
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {!hasDoc ? (
           <p className="px-2 py-4 text-sm text-zinc-400">未选择文件</p>
