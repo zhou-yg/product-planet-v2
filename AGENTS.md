@@ -12,3 +12,7 @@ requirements
 
 products/
 - 生成的具体代码
+
+## 关于 e2e
+
+不需要每次都运行e2e，除非明确提到了
