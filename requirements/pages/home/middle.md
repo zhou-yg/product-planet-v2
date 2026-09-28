@@ -3,9 +3,14 @@ inject:
   - components/md-editor.md
   - components/glb-viewer.md
   - service/file-writer.md
+  - service/sync-agents.md
 ---
 
 # Home - 中间
+
+- 顶部操作栏
+  - 同步至AGENTS.md
+    - 当前选中的文件是 requirements/common 下的文件时，展示该按钮，点击时调用 <sync-agents /> 组件
 
 - 可以根据不同的文件类型，展示不同的编辑器
   - markdown 使用 <md-editor>markdown编辑器</md-editor>
