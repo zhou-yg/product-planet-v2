@@ -10,34 +10,24 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/** Recursively collect md file paths (relative to requirements/) sorted by path */
-async function collectMdFiles(
-  absDir: string,
-  relDir: string,
-): Promise<string[]> {
+/** List md files under a directory (non-recursive), sorted by name */
+async function collectMdFiles(absDir: string): Promise<string[]> {
   let entries: Dirent[];
   try {
     entries = await fs.readdir(absDir, { withFileTypes: true });
   } catch {
     return [];
   }
-  const out: string[] = [];
-  for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
-    if (entry.name === "node_modules" || entry.name === ".git") continue;
-    const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) {
-      out.push(...(await collectMdFiles(path.join(absDir, entry.name), rel)));
-    } else if (entry.isFile() && /\.md$/i.test(entry.name)) {
-      out.push(rel);
-    }
-  }
-  out.sort();
-  return out;
+  return entries
+    .filter(
+      (e) => e.isFile() && !e.name.startsWith(".") && /\.md$/i.test(e.name),
+    )
+    .map((e) => e.name)
+    .sort();
 }
 
 /**
- * Sync requirements md files into the workspace AGENTS.md.
+ * Sync requirements/common md files into the workspace AGENTS.md.
  * POST /api/sync-agents  body: { ws? }
  */
 export async function POST(req: NextRequest) {
@@ -56,11 +46,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const reqDir = path.join(wsDir, "requirements");
-  const files = await collectMdFiles(reqDir, "");
+  const reqDir = path.join(wsDir, "requirements", "common");
+  const files = await collectMdFiles(reqDir);
   if (files.length === 0) {
     return NextResponse.json(
-      { ok: false, message: "requirements 下没有 md 文件" },
+      { ok: false, message: "requirements/common 下没有 md 文件" },
       { status: 400 },
     );
   }
@@ -73,11 +63,11 @@ export async function POST(req: NextRequest) {
       raw = await fs.readFile(path.join(reqDir, rel), "utf-8");
     } catch (err) {
       return NextResponse.json(
-        { ok: false, message: `读取 requirements/${rel} 失败：${String(err)}` },
+        { ok: false, message: `读取 requirements/common/${rel} 失败：${String(err)}` },
         { status: 500 },
       );
     }
-    parts.push(`## requirements/${rel}\n\n${raw.trim()}`);
+    parts.push(`## requirements/common/${rel}\n\n${raw.trim()}`);
   }
 
   const workspaceName = wsDir.split("/").pop() ?? "";

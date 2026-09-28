@@ -1,6 +1,6 @@
 # sync-agents
 
-读取 requirements/*.md 文件
+仅读取 requirements/common/*.md 文件
 
 按照文件路径 和 内容
 
