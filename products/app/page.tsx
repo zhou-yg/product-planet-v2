@@ -1,6 +1,7 @@
 import FileTree from "@/components/file-tree";
 import ContentPanel from "@/components/content-panel";
 import DepsPanel from "@/components/deps-panel";
+import OpenVscodeButton from "@/components/open-vscode-button";
 import {
   buildTree,
   readFileContent,
@@ -54,7 +55,7 @@ export default async function Home({ searchParams }: PageProps) {
     <div className="flex h-screen flex-col">
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-4">
         <h1 className="text-sm font-semibold text-zinc-900">产品星球 2.0</h1>
-        <span className="text-xs text-zinc-500">Markdown 管理平台</span>
+        <OpenVscodeButton ws={activeWs} />
       </header>
       <div className="flex min-h-0 flex-1 gap-[10px]">
         {/* 左：workspace 选择器 + 文件树 */}
