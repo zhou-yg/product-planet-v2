@@ -1,5 +1,6 @@
 import MdEditor from "@/components/md-editor";
 import GlbViewer from "@/components/glb-viewer";
+import SyncAgentsButton from "@/components/sync-agents-button";
 import type { FileContent } from "@/lib/fs";
 
 interface Props {
@@ -38,8 +39,15 @@ function rawUrl(path: string, ws: string): string {
 }
 
 export default function ContentPanel({ doc, missing, ws }: Props) {
+  // Show the sync button only for files under requirements/common/
+  const isCommonFile = !!doc && doc.path.startsWith("common/");
   return (
     <main className="min-w-0 flex-1 overflow-hidden bg-zinc-50">
+      {isCommonFile ? (
+        <div className="flex h-10 shrink-0 items-center justify-end border-b border-zinc-200 bg-white px-4">
+          <SyncAgentsButton ws={ws} />
+        </div>
+      ) : null}
       {doc?.kind === "md" ? (
         <div className="h-full overflow-y-auto">
           <div className="mx-auto max-w-4xl px-4 py-4">
