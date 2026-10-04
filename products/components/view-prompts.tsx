@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { WS_PARAM } from "@/lib/shared";
 
 interface Props {
@@ -44,25 +44,31 @@ async function copyToClipboard(text: string): Promise<boolean> {
  * 抽屉里展示 <view-and-diff> 接口返回的内容。
  * - 顶部操作栏：复制（内容支持复制）
  * - 底部输入框：补充内容 + 发送任务（唤起 <agents /> 工具，创建任务）
+ *   - 发送的内容是：补充内容 + 接口返回的内容
+ *   - 调用成功后跳转到 dsh web（http://127.0.0.1:8080/，如果已存在）
  */
+
+/** dsh web 服务地址（agents 工具创建任务所在），发送成功后跳转 */
+const DSH_WEB_URL = "http://127.0.0.1:8080/";
+
+/** 底部输入框默认填写的补充内容 */
+const DEFAULT_SUPPLEMENT = "需求描述文件已更新，更新相关代码";
+
 export default function ViewPrompts({
   open,
   onClose,
   docPath,
   content,
 }: Props) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const ws = searchParams.get(WS_PARAM) ?? "";
 
   const [copyState, setCopyState] = useState<"idle" | "ok" | "fail">("idle");
   const resetTimer = useRef<number | null>(null);
 
-  // 底部输入框：补充内容 + 发送任务
-  // （默认填上常用任务描述，用户可自由修改）
-  const [supplement, setSupplement] = useState(
-    "需求描述文件已更新，更新相关代码",
-  );
+  // 底部输入框：补充内容
+  // （默认填写固定文案，发送成功后重置回默认值）
+  const [supplement, setSupplement] = useState(DEFAULT_SUPPLEMENT);
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<
     { ok: boolean; text: string } | null
@@ -117,7 +123,7 @@ export default function ViewPrompts({
   }, [content]);
 
   // 发送任务：唤起 <agents /> 工具，创建任务
-  // （提示词内容 + 用户补充的内容，工作区为当前项目所在目录）
+  // （发送的内容是：补充内容 + 接口返回的内容，工作区为当前项目所在目录）
   const sendTask = useCallback(async () => {
     if (sending || !content) return;
     setSending(true);
@@ -129,7 +135,7 @@ export default function ViewPrompts({
         body: JSON.stringify({
           ws,
           prompt: supplement.trim()
-            ? `${content.trimEnd()}\n\n${supplement.trim()}`
+            ? `${supplement.trim()}\n\n${content.trimEnd()}`
             : content,
         }),
       });
@@ -147,7 +153,9 @@ export default function ViewPrompts({
             ? `任务已创建（${data.sessionId}）`
             : "任务已创建",
         });
-        setSupplement("");
+        setSupplement(DEFAULT_SUPPLEMENT);
+        // 调用成功后跳转到 dsh web（如果已存在则切换到该标签页）
+        window.open(DSH_WEB_URL, "dsh-web");
       }
     } catch (err) {
       setSendResult({ ok: false, text: `发送任务失败：${String(err)}` });
