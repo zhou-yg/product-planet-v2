@@ -58,10 +58,10 @@ export default async function Home({ searchParams }: PageProps) {
         <OpenVscodeButton ws={activeWs} />
       </header>
       <div className="flex min-h-0 flex-1 gap-[10px]">
-        {/* 左：workspace 选择器 + 文件树 */}
+        {/* 左：workspace 选择器 + 文件树管理器 */}
         <FileTree
           tree={tree}
-          selected={doc ? doc.path : ""}
+          selected={selected || (doc ? doc.path : "")}
           fallbackHint={!doc && target ? target : ""}
           workspaces={workspaces}
           activeWs={activeWs}

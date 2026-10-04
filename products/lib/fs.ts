@@ -291,15 +291,79 @@ async function buildDir(
   return { dirPath: relDir, name: displayName, dirs, files };
 }
 
+/** requirements 根目录绝对路径 */
+export function requirementsRoot(wsDir: string): string {
+  return path.join(wsDir, "requirements");
+}
+
 /** 校验路径合法（在 workspace requirements/ 内、是受支持的文件类型），返回绝对路径或 null */
 function resolveSafe(wsDir: string, relPath: string): string | null {
   if (!relPath || relPath.includes("\0")) return null;
   if (!TREE_EXTS.test(relPath)) return null;
-  const abs = path.resolve(path.join(wsDir, "requirements"), relPath);
-  const root = path.join(wsDir, "requirements");
+  return resolveInside(wsDir, relPath);
+}
+
+/**
+ * 校验路径合法（在 workspace requirements/ 内），返回绝对路径或 null。
+ * 不限制扩展名，供文件管理操作（任意名字的文件与文件夹）使用；
+ * 拒绝绝对路径、`..` 越界；空字符串表示 requirements/ 根目录本身。
+ */
+export function resolveInside(wsDir: string, relPath: string): string | null {
+  if (relPath.includes("\0")) return null;
+  const root = requirementsRoot(wsDir);
+  if (relPath === "") return root;
+  if (relPath.startsWith("/")) return null;
+  if (relPath.startsWith("\\")) return null;
+  if (/^[a-zA-Z]:[\\/]/.test(relPath)) return null;
+  const abs = path.resolve(root, relPath);
   const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
+  // 必须严格位于 requirements/ 内（含 requirements/ 目录本身，供 dir 为根目录时使用）
   if (abs !== root && !abs.startsWith(rootWithSep)) return null;
   return abs;
+}
+
+/**
+ * 校验相对目录路径合法（在 requirements/ 内，可为空表示根目录）。
+ * 返回绝对路径，目录不存在时返回 null。
+ */
+async function resolveDir(
+  wsDir: string,
+  relDir: string,
+): Promise<string | null> {
+  const abs = resolveInside(wsDir, relDir);
+  if (!abs) return null;
+  try {
+    const stat = await fs.stat(abs);
+    return stat.isDirectory() ? abs : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 名称合法性：非空、不以 `.` 开头、不含分隔符与非法字符 */
+export function validEntryName(name: string): boolean {
+  if (!name || name.startsWith(".")) return false;
+  if (name.includes("\0")) return false;
+  if (name.includes("\\") || name.includes(":")) return false;
+  if (/[\\/:*?"<>|]/.test(name)) return false;
+  return true;
+}
+
+/** 相对路径段合法性：每一段都是合法名称（非空、不以 . 开头、无分隔符） */
+export function validRelPathSegments(relPath: string): boolean {
+  if (!relPath) return false;
+  const segs = relPath.split("/");
+  return segs.every((seg) => seg.length > 0 && validEntryName(seg));
+}
+
+/** 判断文件名是否为文件树支持的类型（md / 图片 / glb） */
+export function isSupportedFileName(name: string): boolean {
+  return TREE_EXTS.test(name);
+}
+
+/** 判断文件是否为 markdown */
+export function isMarkdownPath(p: string): boolean {
+  return /\.(md|markdown)$/i.test(p);
 }
 
 /**
@@ -434,4 +498,223 @@ export async function defaultFile(wsDir: string): Promise<string> {
   const tree = await buildTree(wsDir);
   const first = flattenFiles(tree).find((f) => f.kind === "md");
   return first?.path ?? "";
+}
+
+/** 文件管理操作失败原因 */
+export type FsOpError = {
+  status: number;
+  message: string;
+};
+
+/** 校验路径合法（requirements/ 内、拒绝绝对路径与 .. 越界），失败抛出 FsOpError */
+function requireInside(wsDir: string, relPath: string): string {
+  const abs = resolveInside(wsDir, relPath);
+  if (!abs) {
+    throw { status: 400, message: "路径非法（仅允许 requirements/ 内的相对路径）" };
+  }
+  return abs;
+}
+
+/** 目标绝对路径已存在时抛出冲突错误 */
+async function ensureAbsent(abs: string, what: string): Promise<void> {
+  if (await pathExists(abs)) {
+    throw { status: 409, message: `目标已存在同名${what}` };
+  }
+}
+
+/** 路径是否存在（文件或文件夹） */
+export async function pathExists(abs: string): Promise<boolean> {
+  try {
+    await fs.access(abs);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 校验文件/文件夹名称：非空、不以 `.` 开头、不含分隔符等非法字符 */
+function requireValidName(name: unknown, what: string): string {
+  if (typeof name !== "string" || !validEntryName(name)) {
+    throw {
+      status: 400,
+      message: `${what}名称非法（需非空、不以 . 开头、不含 / 等特殊字符）`,
+    };
+  }
+  return name;
+}
+
+/** 校验相对路径各段均合法（用于可含 / 的多级路径，如文件夹名 a/b） */
+function requireValidSegments(relPath: unknown, what: string): string {
+  if (typeof relPath !== "string" || !validRelPathSegments(relPath)) {
+    throw {
+      status: 400,
+      message: `${what}路径非法（需非空、各段不以 . 开头、不含特殊字符）`,
+    };
+  }
+  return relPath;
+}
+
+/** 目标路径是否为受文件树支持的文件（受支持的扩展名） */
+export async function isSupportedFile(abs: string): Promise<boolean> {
+  if (!isSupportedFileName(path.basename(abs))) return false;
+  try {
+    const stat = await fs.stat(abs);
+    return stat.isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** 新建文件：在 dir 下创建名为 name 的空文件 */
+export async function createFileIn(
+  wsDir: string,
+  relDir: string,
+  name: string,
+): Promise<string> {
+  const dirAbs = requireInside(wsDir, relDir);
+  requireValidName(name, "文件");
+  if (relDir === "" && !isSupportedFileName(name)) {
+    throw { status: 400, message: "不支持的文件类型（仅 md / 图片 / glb）" };
+  }
+  const stat = await fs.stat(dirAbs).catch(() => null);
+  if (!stat || !stat.isDirectory()) {
+    throw { status: 404, message: "所在文件夹不存在" };
+  }
+  const abs = path.join(dirAbs, name);
+  if (await pathExists(abs)) {
+    throw { status: 409, message: "目标已存在同名文件" };
+  }
+  if (!isSupportedFileName(name)) {
+    throw { status: 400, message: "不支持的文件类型（仅 md / 图片 / glb）" };
+  }
+  await fs.writeFile(abs, "", "utf-8");
+  return path.relative(requirementsRoot(wsDir), abs).split(path.sep).join("/");
+}
+
+/** 新建文件夹：在 dir 下创建名为 name 的文件夹（name 可含 /，一次创建多级） */
+export async function mkdirIn(
+  wsDir: string,
+  relDir: string,
+  name: string,
+): Promise<string> {
+  const dirAbs = requireInside(wsDir, relDir);
+  requireValidSegments(name, "文件夹");
+  const relTarget = relDir ? `${relDir}/${name}` : name;
+  const abs = requireInside(wsDir, relTarget);
+  if (await pathExists(abs)) {
+    throw { status: 409, message: "目标已存在同名文件夹" };
+  }
+  const stat = await fs.stat(dirAbs).catch(() => null);
+  if (!stat || !stat.isDirectory()) {
+    throw { status: 404, message: "所在文件夹不存在" };
+  }
+  await fs.mkdir(abs, { recursive: true });
+  return relTarget;
+}
+
+/** 删除文件或文件夹（文件夹递归删除） */
+export async function deletePath(
+  wsDir: string,
+  relPath: string,
+): Promise<void> {
+  const abs = requireInside(wsDir, relPath);
+  if (!(await pathExists(abs))) {
+    throw { status: 404, message: "文件或文件夹不存在" };
+  }
+  const stat = await fs.stat(abs);
+  if (stat.isDirectory()) {
+    await fs.rm(abs, { recursive: true, force: true });
+  } else {
+    await fs.unlink(abs);
+  }
+}
+
+/** 重命名：将文件/文件夹在原目录下重命名为 name */
+export async function renameTo(
+  wsDir: string,
+  relPath: string,
+  name: string,
+): Promise<string> {
+  const abs = requireInside(wsDir, relPath);
+  requireValidName(name, "新");
+  if (!(await pathExists(abs))) {
+    throw { status: 404, message: "文件或文件夹不存在" };
+  }
+  const target = path.join(path.dirname(abs), name);
+  if (target === abs) return relPath;
+  if (await pathExists(target)) {
+    throw { status: 409, message: "目标已存在同名文件或文件夹" };
+  }
+  await fs.rename(abs, target);
+  return path.relative(requirementsRoot(wsDir), target).split(path.sep).join("/");
+}
+
+/** 移动：将文件/文件夹移动到 dir 下 */
+export async function moveTo(
+  wsDir: string,
+  relPath: string,
+  relDir: string,
+): Promise<string> {
+  const abs = requireInside(wsDir, relPath);
+  const dirAbs = requireInside(wsDir, relDir);
+  if (!(await pathExists(abs))) {
+    throw { status: 404, message: "文件或文件夹不存在" };
+  }
+  const stat = await fs.stat(dirAbs).catch(() => null);
+  if (!stat || !stat.isDirectory()) {
+    throw { status: 404, message: "目标文件夹不存在" };
+  }
+  const target = path.join(dirAbs, path.basename(abs));
+  if (target === abs) return relPath;
+  if (await pathExists(target)) {
+    throw { status: 409, message: "目标文件夹下已存在同名文件或文件夹" };
+  }
+  await fs.rename(abs, target);
+  return path.relative(requirementsRoot(wsDir), target).split(path.sep).join("/");
+}
+
+/** 复制：将文件/文件夹复制到 dir 下（文件夹递归复制） */
+export async function copyTo(
+  wsDir: string,
+  relPath: string,
+  relDir: string,
+): Promise<string> {
+  const abs = requireInside(wsDir, relPath);
+  const dirAbs = requireInside(wsDir, relDir);
+  if (!(await pathExists(abs))) {
+    throw { status: 404, message: "文件或文件夹不存在" };
+  }
+  const stat = await fs.stat(dirAbs).catch(() => null);
+  if (!stat || !stat.isDirectory()) {
+    throw { status: 404, message: "目标文件夹不存在" };
+  }
+  const target = path.join(dirAbs, path.basename(abs));
+  if (target === abs) {
+    throw { status: 400, message: "不能复制到自身所在文件夹" };
+  }
+  if (await pathExists(target)) {
+    throw { status: 409, message: "目标文件夹下已存在同名文件或文件夹" };
+  }
+  const srcStat = await fs.stat(abs);
+  if (srcStat.isDirectory()) {
+    await copyDirRecursive(abs, target);
+  } else {
+    await fs.copyFile(abs, target);
+  }
+  return path.relative(requirementsRoot(wsDir), target).split(path.sep).join("/");
+}
+
+/** 递归复制文件夹 */
+async function copyDirRecursive(src: string, dest: string): Promise<void> {
+  await fs.mkdir(dest, { recursive: true });
+  const entries = await fs.readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const from = path.join(src, entry.name);
+    const to = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await copyDirRecursive(from, to);
+    } else if (entry.isFile()) {
+      await fs.copyFile(from, to);
+    }
+  }
 }
