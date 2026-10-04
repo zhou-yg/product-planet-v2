@@ -73,13 +73,13 @@ test.describe("Home 中间内容区", () => {
     const saved = await fs.readFile(HOME_MD, "utf-8");
     expect(saved).toContain("inject:");
     expect(saved).toContain("# Home e2e-meta-keep");
-    expect(saved).toContain("首页， 左中右");
+    expect(saved).toContain("首页， 顶部标题栏 + 左中右");
 
     // 读接口返回内容（已剥离 frontmatter），包含合并后的标题与正文
     const res = await request.get("/api/file?path=pages/home.md");
     expect(res.ok()).toBeTruthy();
     const body = (await res.json()) as { ok: boolean; doc?: { content: string } };
     expect(body.ok).toBeTruthy();
-    expect(body.doc?.content).toContain("首页， 左中右");
+    expect(body.doc?.content).toContain("首页， 顶部标题栏 + 左中右");
   });
 });
