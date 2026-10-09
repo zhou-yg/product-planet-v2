@@ -2,6 +2,7 @@ import FileTree from "@/components/file-tree";
 import ContentPanel from "@/components/content-panel";
 import DepsPanel from "@/components/deps-panel";
 import OpenVscodeButton from "@/components/open-vscode-button";
+import CommitChangesButton from "@/components/commit-changes-button";
 import {
   buildTree,
   readFileContent,
@@ -12,6 +13,7 @@ import {
   listWorkspaces,
   DEFAULT_WORKSPACE,
 } from "@/lib/fs";
+import { listGitChanges } from "@/lib/git";
 import { FILE_PARAM, WS_PARAM } from "@/lib/shared";
 
 export const dynamic = "force-dynamic";
@@ -51,11 +53,23 @@ export default async function Home({ searchParams }: PageProps) {
       : null;
   const deps = wsDir && doc ? await resolveInject(wsDir, doc.meta) : [];
 
+  // 未提交变更（git status，含未跟踪文件；非 git 仓库时视为无变更）
+  const gitChanges = wsDir ? await listGitChanges(wsDir) : null;
+  const isGit = gitChanges !== null;
+  const changes = gitChanges ?? [];
+
   return (
     <div className="flex h-screen flex-col">
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-4">
         <h1 className="text-sm font-semibold text-zinc-900">产品星球 2.0</h1>
-        <OpenVscodeButton ws={activeWs} />
+        <div className="flex items-center gap-2">
+          <CommitChangesButton
+            ws={activeWs}
+            initialChanges={changes}
+            isGit={isGit}
+          />
+          <OpenVscodeButton ws={activeWs} />
+        </div>
       </header>
       <div className="flex min-h-0 flex-1 gap-[10px]">
         {/* 左：workspace 选择器 + 文件树管理器 */}
@@ -69,8 +83,14 @@ export default async function Home({ searchParams }: PageProps) {
         />
         {/* 中：文件内容（按类型分发：md 编辑器 / 图片预览 / glb 预览器） */}
         <ContentPanel doc={doc} missing={!doc && !!target} ws={activeWs} />
-        {/* 右：依赖列表 + 获取（view-and-diff） */}
-        <DepsPanel deps={deps} hasDoc={!!doc} docPath={doc?.path ?? ""} />
+        {/* 右：依赖列表 + 获取（view-and-diff）+ 新增（inject 选择器） */}
+        <DepsPanel
+          deps={deps}
+          hasDoc={!!doc}
+          docPath={doc?.path ?? ""}
+          tree={tree}
+          isMd={doc?.kind === "md"}
+        />
       </div>
     </div>
   );

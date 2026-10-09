@@ -2,18 +2,23 @@
 
 import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { InjectDep } from "@/lib/shared";
+import type { InjectDep, TreeNode } from "@/lib/shared";
 import { FILE_PARAM, WS_PARAM } from "@/lib/shared";
 import ViewPrompts from "@/components/view-prompts";
+import InjectPicker from "@/components/inject-picker";
 
 interface Props {
   deps: InjectDep[];
   hasDoc: boolean;
   /** Path of the currently selected file, used by the view-diff fetch */
   docPath: string;
+  /** requirements 文件树（新增依赖选择器的数据源） */
+  tree: TreeNode | null;
+  /** 当前文件是否为 markdown（「新增」按钮仅对 md 文件展示） */
+  isMd: boolean;
 }
 
-export default function DepsPanel({ deps, hasDoc, docPath }: Props) {
+export default function DepsPanel({ deps, hasDoc, docPath, tree, isMd }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const ws = searchParams.get(WS_PARAM) ?? "";
@@ -21,6 +26,8 @@ export default function DepsPanel({ deps, hasDoc, docPath }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [content, setContent] = useState("");
+  // 新增依赖选择器
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const jump = (depPath: string) => {
     const params = new URLSearchParams();
@@ -60,6 +67,33 @@ export default function DepsPanel({ deps, hasDoc, docPath }: Props) {
     }
   }, [docPath, ws]);
 
+  // 新增 inject 依赖：提交所选路径，成功后刷新页面让服务端重算依赖
+  const addInjects = useCallback(
+    async (
+      paths: string[],
+    ): Promise<{ ok: boolean; message?: string }> => {
+      try {
+        const res = await fetch("/api/file/inject", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: docPath, deps: paths, ws }),
+        });
+        const data = (await res.json()) as {
+          ok: boolean;
+          message?: string;
+        };
+        if (!res.ok || !data.ok) {
+          return { ok: false, message: data.message ?? "新增依赖失败" };
+        }
+        router.refresh();
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, message: `新增依赖失败：${String(err)}` };
+      }
+    },
+    [docPath, router, ws],
+  );
+
   return (
     <aside className="flex w-72 shrink-0 flex-col border-l border-zinc-200 bg-white">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-zinc-100 px-3">
@@ -97,6 +131,16 @@ export default function DepsPanel({ deps, hasDoc, docPath }: Props) {
         onClose={() => setOpen(false)}
         docPath={docPath}
         content={content}
+      />
+
+      {/* 文件树选择器：搜索 + 多选，确定后写入 meta inject */}
+      <InjectPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        tree={tree}
+        docPath={docPath}
+        existing={deps.map((d) => d.path)}
+        onConfirm={addInjects}
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -141,6 +185,19 @@ export default function DepsPanel({ deps, hasDoc, docPath }: Props) {
           </ul>
         )}
       </div>
+
+      {/* 底部：新增 inject 依赖（仅 markdown 文件展示） */}
+      {hasDoc && isMd ? (
+        <div className="shrink-0 border-t border-zinc-100 p-2">
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="w-full rounded-md border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+          >
+            新增
+          </button>
+        </div>
+      ) : null}
     </aside>
   );
 }

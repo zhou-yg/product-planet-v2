@@ -107,3 +107,64 @@ export function flattenFiles(tree: TreeNode): FileNode[] {
   walk(tree);
   return out;
 }
+
+/** git 变更状态（相对 HEAD 的未提交改动） */
+export type GitChangeStatus = "added" | "modified" | "deleted";
+
+/** 一个未提交的 git 变更文件 */
+export interface GitChange {
+  /** 变更状态：added（新增/未跟踪）、modified（修改）、deleted（删除） */
+  status: GitChangeStatus;
+  /** 文件路径（相对 workspace 根目录，如 "requirements/pages/home.md"） */
+  path: string;
+}
+
+/** git 变更状态 -> 展示文案 */
+export const GIT_CHANGE_STATUS_LABELS: Record<GitChangeStatus, string> = {
+  added: "新增",
+  modified: "修改",
+  deleted: "删除",
+};
+
+/**
+ * 变更文件路径列表 -> 嵌套目录树（popover 展示被改动的文件树用）。
+ * 目录节点按名称排序，文件排在同级目录之后。
+ */
+export interface ChangeTreeNode {
+  /** 目录名（根节点为 workspace 名，不可作为路径段使用） */
+  name: string;
+  /** 子目录（按名称排序） */
+  dirs: ChangeTreeNode[];
+  /** 目录内变更的文件（按名称排序） */
+  files: { name: string; status: GitChangeStatus }[];
+}
+
+/** 文件路径列表 -> 变更文件树（目录排序、文件排序，文件夹在前文件在后） */
+export function buildChangeTree(rootName: string, paths: string[]): ChangeTreeNode {
+  const root: ChangeTreeNode = { name: rootName, dirs: [], files: [] };
+  const dirIndex = new Map<string, ChangeTreeNode>([["", root]]);
+
+  const ensureDir = (dirPath: string): ChangeTreeNode => {
+    const cached = dirIndex.get(dirPath);
+    if (cached) return cached;
+    const slash = dirPath.lastIndexOf("/");
+    const parentPath = slash === -1 ? "" : dirPath.slice(0, slash);
+    const name = slash === -1 ? dirPath : dirPath.slice(slash + 1);
+    const parent = ensureDir(parentPath);
+    const node: ChangeTreeNode = { name, dirs: [], files: [] };
+    parent.dirs.push(node);
+    parent.dirs.sort((a, b) => a.name.localeCompare(b.name));
+    dirIndex.set(dirPath, node);
+    return node;
+  };
+
+  for (const p of paths) {
+    const slash = p.lastIndexOf("/");
+    const dirPath = slash === -1 ? "" : p.slice(0, slash);
+    const fileName = slash === -1 ? p : p.slice(slash + 1);
+    const dir = ensureDir(dirPath);
+    dir.files.push({ name: fileName, status: "modified" });
+    dir.files.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return root;
+}
