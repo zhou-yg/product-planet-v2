@@ -6,7 +6,7 @@ import { test, expect } from "@playwright/test";
  * - 底部有补充内容输入框（默认文案）+ 发送任务按钮
  * - 发送任务调用 /api/agents/task 创建任务（拦截 fetch mock，避免真实建任务）
  * - 发送的内容是：补充内容 + 接口返回的内容（补充内容在前）
- * - 调用成功后跳转到 http://127.0.0.1:8080/（如果已存在则复用同一标签页）
+ * - 调用成功后关闭抽屉
  */
 test.describe("view-prompts 抽屉", () => {
   test("打开抽屉展示底部输入框并可发送任务", async ({ page }) => {
@@ -25,7 +25,7 @@ test.describe("view-prompts 抽屉", () => {
         }
         return original(input as RequestInfo, init as RequestInit);
       };
-      // 拦截 window.open：避免测试真实开新标签页，记录调用参数
+      // 拦截 window.open：确保发送成功后不再跳转 dsh web
       (window as unknown as { __openCalls?: string[] }).__openCalls = [];
       window.open = (url?: string | URL, target?: string) => {
         (window as unknown as { __openCalls: string[] }).__openCalls.push(
@@ -54,9 +54,6 @@ test.describe("view-prompts 抽屉", () => {
 
     await dialog.getByRole("button", { name: "发送任务", exact: true }).click();
 
-    // 成功反馈
-    await expect(dialog.getByText("任务已创建（test-session-1）")).toBeVisible();
-
     // 请求体：发送的内容是「补充内容 + 接口返回的内容」，补充内容在前
     const body = (await page.evaluate(() =>
       (window as unknown as { __taskBody?: { prompt?: string } }).__taskBody,
@@ -69,17 +66,23 @@ test.describe("view-prompts 抽屉", () => {
       prompt.indexOf("<inject content="),
     );
 
-    // 调用成功后跳转到 dsh web（http://127.0.0.1:8080/，如已存在则复用同一标签页）
+    // 调用成功后关闭抽屉（不再跳转 dsh web）
+    await expect(dialog).toBeHidden();
+
+    // 发送成功后不应有 window.open 跳转
     const openCalls = (await page.evaluate(() =>
       (window as unknown as { __openCalls?: string[] }).__openCalls,
     )) as string[];
-    expect(openCalls).toEqual(["http://127.0.0.1:8080/|dsh-web"]);
+    expect(openCalls).toEqual([]);
 
-    // 发送成功后补充内容重置回默认文案
-    await expect(supplement).toHaveValue("需求描述文件已更新，更新相关代码");
+    // 重新打开抽屉：补充内容已重置回默认文案
+    await panel.getByRole("button", { name: "获取", exact: true }).click();
+    await expect(dialog).toBeVisible();
+    const supplement2 = dialog.getByLabel("补充内容");
+    await expect(supplement2).toHaveValue("需求描述文件已更新，更新相关代码");
 
     // 关闭抽屉
-    await dialog.getByRole("button", { name: "关闭" }).click();
+    await dialog.getByRole("button", { name: "关闭", exact: true }).click();
     await expect(dialog).toBeHidden();
   });
 });

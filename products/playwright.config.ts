@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * Playwright e2e config for product-planet-v2.
- * Assumes the Next.js dev server (or `next start`) serves http://localhost:3000.
+ * Assumes the Next.js dev server (or `next start`) serves http://localhost:41000.
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -12,7 +12,7 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"]],
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: "http://localhost:41000",
     trace: "on-first-retry",
   },
   projects: [
@@ -24,7 +24,7 @@ export default defineConfig({
   // Start the Next.js dev server automatically when not already running.
   webServer: {
     command: "npm run dev",
-    url: "http://localhost:3000",
+    url: "http://localhost:41000",
     reuseExistingServer: true,
     timeout: 120_000,
   },

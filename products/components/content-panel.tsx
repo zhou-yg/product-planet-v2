@@ -12,10 +12,8 @@ interface Props {
 
 /**
  * Split content into (first H1 title, remaining body).
- * JSX-style tags (e.g. <md-editor>) break mdxeditor's markdown parser,
- * so they are escaped into HTML entities for rendering. The editor's
- * onChange gives back the markdown source where entities stay escaped,
- * which is acceptable: saving converts them back via the write API input.
+ * The body is returned as-is: JSX-ish tags (<file-writer /> etc.) are kept
+ * raw and handled natively by the editor's jsx plugin.
  */
 function splitTitle(content: string): { title: string; body: string } {
   // Trim leading whitespace (frontmatter stripping often leaves a leading newline)
@@ -23,12 +21,7 @@ function splitTitle(content: string): { title: string; body: string } {
   const m = trimmed.match(/^#\s+(.+)\r?\n?/);
   const rawTitle = m ? m[1].trim() : "";
   const rest = m ? trimmed.slice(m[0].length) : trimmed;
-  // Escape < and > so JSX-ish tags render as plain text (built via char codes
-  // to avoid tooling unescaping HTML entities back into raw angle brackets)
-  const LT = "&" + "lt;";
-  const GT = "&" + "gt;";
-  const body = rest.replace(/</g, LT).replace(/>/g, GT);
-  return { title: rawTitle, body };
+  return { title: rawTitle, body: rest };
 }
 
 /** Raw file URL for image/glb previews */

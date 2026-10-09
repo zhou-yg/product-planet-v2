@@ -45,11 +45,8 @@ async function copyToClipboard(text: string): Promise<boolean> {
  * - 顶部操作栏：复制（内容支持复制）
  * - 底部输入框：补充内容 + 发送任务（唤起 <agents /> 工具，创建任务）
  *   - 发送的内容是：补充内容 + 接口返回的内容
- *   - 调用成功后跳转到 dsh web（http://127.0.0.1:8080/，如果已存在）
+ *   - 调用成功后关闭抽屉
  */
-
-/** dsh web 服务地址（agents 工具创建任务所在），发送成功后跳转 */
-const DSH_WEB_URL = "http://127.0.0.1:8080/";
 
 /** 底部输入框默认填写的补充内容 */
 const DEFAULT_SUPPLEMENT = "需求描述文件已更新，更新相关代码";
@@ -154,8 +151,8 @@ export default function ViewPrompts({
             : "任务已创建",
         });
         setSupplement(DEFAULT_SUPPLEMENT);
-        // 调用成功后跳转到 dsh web（如果已存在则切换到该标签页）
-        window.open(DSH_WEB_URL, "dsh-web");
+        // 调用成功后关闭抽屉
+        onClose();
       }
     } catch (err) {
       setSendResult({ ok: false, text: `发送任务失败：${String(err)}` });
@@ -168,7 +165,7 @@ export default function ViewPrompts({
         3000,
       );
     }
-  }, [content, sending, supplement, ws]);
+  }, [content, onClose, sending, supplement, ws]);
 
   if (!open) return null;
 
