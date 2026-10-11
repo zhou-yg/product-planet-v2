@@ -10,7 +10,7 @@ inject:
 
 - 顶部操作栏
   - 同步至AGENTS.md
-    - 当前选中的文件是 requirements/common 下的文件时，展示该按钮，点击时调用 <sync-agents /> 组件
+    - 当前选中的文件是 requirements/common 下的文件时，展示该按钮，点击时调用 <sync-agents > 组件
 
 - 可以根据不同的文件类型，展示不同的编辑器
   - markdown 使用 <md-editor>markdown编辑器</md-editor>
@@ -20,4 +20,4 @@ inject:
 - 文件内容模块，展示当前选中的文件内容
 - 顶部不需要展示文件名
 - 提供保存按钮
-  - 使用 <file-writer /> 里的写接口 保存最新的文件内容
+  - 使用 <file-writer > 里的写接口 保存最新的文件内容
